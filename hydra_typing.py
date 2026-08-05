@@ -406,7 +406,7 @@ def _convert(value: Any, expected_type: Any, path: str) -> Any:
         return value
 
 
-def _instantiate(cls: type, data: dict, path: str) -> Any:
+def _instantiate(cls: type, data: dict, path: str, strict: bool = False) -> Any:
     """Construct a typed dataclass instance from *data*, validating all fields."""
     if not dataclasses.is_dataclass(cls):
         raise ConfigError(f"{path}: {cls.__name__} is not a @dataclass")
@@ -414,12 +414,17 @@ def _instantiate(cls: type, data: dict, path: str) -> Any:
     fields_info = _field_map(cls)
     unknown = set(data) - set(fields_info)
     if unknown:
-        msgs = []
-        for uk in sorted(unknown):
-            matches = difflib.get_close_matches(uk, list(fields_info), n=1, cutoff=0.4)
-            hint = f" (did you mean {matches[0]!r}?)" if matches else ""
-            msgs.append(f"{uk!r}{hint}")
-        raise ConfigError(f"{path}: unknown key(s): {', '.join(msgs)}")
+        if strict:
+            msgs = []
+            for uk in sorted(unknown):
+                matches = difflib.get_close_matches(uk, list(fields_info), n=1, cutoff=0.4)
+                hint = f" (did you mean {matches[0]!r}?)" if matches else ""
+                msgs.append(f"{uk!r}{hint}")
+            raise ConfigError(f"{path}: unknown key(s): {', '.join(msgs)}")
+        # Non-strict: silently drop keys not in the dataclass.
+        # This is the default — during incremental adoption your YAML
+        # likely has more keys than your partial dataclass.
+        data = {k: v for k, v in data.items() if k in fields_info}
 
     kwargs: Dict[str, Any] = {}
     for name, info in fields_info.items():
@@ -443,11 +448,10 @@ def _instantiate(cls: type, data: dict, path: str) -> Any:
     return cls(**kwargs)
 
 
-def _dict_to_typed(data: dict, cls: type) -> Any:
+def _dict_to_typed(data: dict, cls: type, strict: bool = False) -> Any:
     """Convert a plain dict (from OmegaConf.to_container) to a typed dataclass."""
-    # Auto-populate hydra config if the schema has a 'hydra' field
     _inject_hydra_config(data, cls)
-    return _instantiate(cls, data, "")
+    return _instantiate(cls, data, "", strict=strict)
 
 
 # ---------------------------------------------------------------------------
@@ -646,10 +650,10 @@ def patch() -> None:
             def _typed_fn(*args: Any, **kwargs: Any) -> Any:
                 if args and isinstance(args[0], DictConfig):
                     plain = OmegaConf.to_container(args[0], resolve=True, enum_to_str=True)
-                    args = (_dict_to_typed(plain, schema),) + args[1:]
+                    args = (_dict_to_typed(plain, schema, strict=False),) + args[1:]
                 elif cfg_param in kwargs and isinstance(kwargs[cfg_param], DictConfig):
                     plain = OmegaConf.to_container(kwargs[cfg_param], resolve=True, enum_to_str=True)
-                    kwargs[cfg_param] = _dict_to_typed(plain, schema)
+                    kwargs[cfg_param] = _dict_to_typed(plain, schema, strict=False)
                 return fn(*args, **kwargs)
 
             return decorator(_typed_fn)
@@ -685,7 +689,7 @@ def hydra_main(
         )
         def wrapper(dict_cfg: DictConfig, *args: Any, **kwargs: Any) -> T:
             plain = OmegaConf.to_container(dict_cfg, resolve=True, enum_to_str=True)
-            kwargs[cfg_param] = _dict_to_typed(plain, actual_schema)
+            kwargs[cfg_param] = _dict_to_typed(plain, actual_schema, strict=False)
             return fn(*args, **kwargs)
 
         return wrapper
@@ -732,10 +736,15 @@ def load_config(
     config_name: str = "config",
     overrides: Optional[List[str]] = None,
     version_base: Optional[str] = None,
+    strict: bool = False,
 ) -> T:
     """Load a typed config programmatically (notebooks, scripts).
 
     Uses Hydra's ``initialize`` + ``compose``, then converts to typed.
+
+    By default (*strict=False*), YAML keys not in the dataclass are silently
+    dropped — ideal for incremental adoption.  Set *strict=True* to reject
+    unknown keys.
 
     Example::
 
@@ -752,7 +761,7 @@ def load_config(
     ):
         dict_cfg = hydra.compose(config_name=config_name, overrides=overrides or [])
         plain = OmegaConf.to_container(dict_cfg, resolve=True, enum_to_str=True)
-        return typing.cast(T, _dict_to_typed(plain, schema))
+        return typing.cast(T, _dict_to_typed(plain, schema, strict=strict))
 
 
 # ---------------------------------------------------------------------------

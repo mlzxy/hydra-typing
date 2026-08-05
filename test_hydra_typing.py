@@ -172,12 +172,20 @@ class TestTypeConversion:
         cfg = load_config(ReqCfg, config_path=str(conf), config_name="config")
         assert cfg.name == "provided"
 
-    def test_unknown_key(self, tmp_path):
+    def test_unknown_key_silent_by_default(self, tmp_path):
+        """Extra YAML keys are silently dropped (incremental adoption)."""
+        conf = tmp_path / "conf"
+        conf.mkdir()
+        _write_yaml(str(conf / "config.yaml"), "a: 1\nbogus: xxx\n")
+        cfg = load_config(SimpleCfg, config_path=str(conf), config_name="config")
+        assert cfg.a == 1  # bogus silently dropped
+
+    def test_unknown_key_strict(self, tmp_path):
         conf = tmp_path / "conf"
         conf.mkdir()
         _write_yaml(str(conf / "config.yaml"), "a: 1\nbogus: xxx\n")
         with pytest.raises(ConfigError, match="bogus"):
-            load_config(SimpleCfg, config_path=str(conf), config_name="config")
+            load_config(SimpleCfg, config_path=str(conf), config_name="config", strict=True)
 
 
 # ---------------------------------------------------------------------------
