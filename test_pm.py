@@ -17,7 +17,7 @@ import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from pm import ConfigError, load_config, print_config, to_plain  # noqa: E402
+from hydra_typing import ConfigError, load_config, print_config, to_plain  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

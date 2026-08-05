@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-train.py — Example CLI using pm (hydra + typed dataclass bridge).
+train.py — Example CLI using hydra_typing (Hydra + typed dataclass configs).
 
-Run with Hydra-compatible syntax — no argparse, no ``-o`` flags::
+Run with standard Hydra CLI — no argparse, no ``-o`` flags::
 
     python train.py
     python train.py model=large optimizer.lr=0.001 exp_name=big_run
@@ -24,11 +24,11 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional, Literal
 
-# Add repo root so pm.py is importable
+# Add repo root so hydra_typing is importable
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from pm import cli, print_config, ConfigError  # noqa: E402
+from hydra_typing import hydra_main, print_config, ConfigError  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ class TrainConfig:
 # Main — decorated with @pm.cli for typed config + hydra CLI
 # ---------------------------------------------------------------------------
 
-@cli(config_path="conf", config_name="base")
+@hydra_main(config_path="conf", config_name="base")
 def main(cfg: TrainConfig) -> None:
     """Train a model — cfg is a fully typed TrainConfig instance."""
 
