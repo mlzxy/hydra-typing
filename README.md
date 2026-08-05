@@ -8,6 +8,10 @@ Your `@hydra.main` function receives an untyped `DictConfig`. With `hydra-typing
 
 All Hydra features work unchanged — `defaults:` groups, `${}` interpolation, CLI overrides, `--multirun`, sweepers, launchers, output management.
 
+The [examples/](examples/) directory contains a full working Hydra project
+demonstrating every feature — incremental adoption, nested collections,
+`_target_` vs Union routing, `HydraConfig`, `to_omegaconf()`, and more.
+
 ## Install
 
 ```bash
