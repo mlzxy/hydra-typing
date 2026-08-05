@@ -59,6 +59,47 @@ cfg = load_config(TrainConfig, config_name="base",
 - **Non-invasive** — functions without type annotations pass through unchanged
 - **Single file** — `hydra_typing.py`, ~700 lines, one dependency
 
+## Incremental adoption
+
+You don't need dataclasses to start.  Add types gradually, at your own pace:
+
+```python
+# Step 1 — add one import, nothing changes
+import hydra_typing; hydra_typing.patch()
+
+@hydra.main(...)
+def main(cfg):                    # ← still untyped, works as before
+    print(cfg.model.hidden_dim)   # DictConfig access unchanged
+```
+
+```python
+# Step 2 — add a dataclass with just the fields you care about
+@dataclass
+class TrainConfig:
+    model: Any = None             # Any = accept whatever YAML gives you
+    lr: float = 3e-4
+
+@hydra.main(...)
+def main(cfg: TrainConfig):       # ← now typed for lr, model still flexible
+    cfg.lr                         # float, IDE-completes
+    cfg.model.hidden_dim           # Any, still works
+```
+
+```python
+# Step 3 — narrow types as you go
+@dataclass
+class ModelConfig:
+    hidden_dim: int = 256
+    num_layers: int = 6
+
+@dataclass
+class TrainConfig:
+    model: ModelConfig = field(default_factory=ModelConfig)  # ← fully typed
+    lr: float = 3e-4
+```
+
+No big rewrite.  One field at a time.  The patch passes through anything you haven't typed yet.
+
 ## Complex nested configs
 
 ```python
