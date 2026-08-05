@@ -95,6 +95,11 @@ __all__ = [
     "hydra_main",
     "load_config",
     "to_plain",
+    "HydraConfig",
+    "RunDir",
+    "SweepDir",
+    "JobConf",
+    "RuntimeConf",
     "ConfigError",
 ]
 
@@ -318,6 +323,9 @@ def _convert(value: Any, expected_type: Any, path: str) -> Any:
             return value
         if not isinstance(value, dict):
             raise ConfigError(f"{path}: expected mapping for {expected_type.__name__}, got {type(value).__name__}")
+        # Support hydra.utils.instantiate via _target_ key
+        if "_target_" in value:
+            return hydra.utils.instantiate(value)
         return _instantiate(expected_type, value, path)
 
     if k == "path":
@@ -430,7 +438,158 @@ def _instantiate(cls: type, data: dict, path: str) -> Any:
 
 def _dict_to_typed(data: dict, cls: type) -> Any:
     """Convert a plain dict (from OmegaConf.to_container) to a typed dataclass."""
+    # Auto-populate hydra config if the schema has a 'hydra' field
+    _inject_hydra_config(data, cls)
     return _instantiate(cls, data, "")
+
+
+# ---------------------------------------------------------------------------
+# HydraConfig — typed mirror of Hydra's built-in runtime config
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass
+class RunDir:
+    """Hydra run output directory config."""
+    dir: str = "outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+
+
+@dataclasses.dataclass
+class SweepDir:
+    """Hydra sweep output directory config."""
+    dir: str = "multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    subdir: str = "${hydra.job.num}"
+
+
+@dataclasses.dataclass
+class JobConf:
+    """Hydra job runtime info."""
+    name: str = ""
+    chdir: Optional[bool] = None
+    override_dirname: str = ""
+    id: str = ""
+    num: int = 0
+    config_name: Optional[str] = None
+
+
+@dataclasses.dataclass
+class RuntimeConf:
+    """Hydra runtime info (populated after composition)."""
+    version: str = ""
+    version_base: str = ""
+    cwd: str = ""
+    output_dir: str = ""
+
+
+@dataclasses.dataclass
+class HydraConfig:
+    """Typed mirror of Hydra's built-in config (``hydra.*`` keys).
+
+    Add this to your top-level config to get typed access to Hydra's
+    runtime information::
+
+        @dataclass
+        class TrainConfig:
+            model: ModelConfig = field(default_factory=ModelConfig)
+            lr: float = 3e-4
+            hydra: HydraConfig = field(default_factory=HydraConfig)
+            # ^^^ populated automatically during load
+
+    Then access::
+
+        cfg.hydra.run.dir          # output directory
+        cfg.hydra.job.name         # job name
+        cfg.hydra.job.num          # sweep job number
+        cfg.hydra.runtime.cwd      # original working directory
+        cfg.hydra.overrides.task   # list of CLI override strings
+    """
+    run: RunDir = dataclasses.field(default_factory=RunDir)
+    sweep: SweepDir = dataclasses.field(default_factory=SweepDir)
+    job: JobConf = dataclasses.field(default_factory=JobConf)
+    runtime: RuntimeConf = dataclasses.field(default_factory=RuntimeConf)
+    output_subdir: Optional[str] = ".hydra"
+    overrides: Dict[str, List[str]] = dataclasses.field(
+        default_factory=lambda: {"task": [], "hydra": []}
+    )
+    verbose: bool = False
+
+
+def _safe_get(cfg: Any, attr: str, default: Any = "") -> Any:
+    """Get *attr* from OmegaConf config, returning *default* on interpolation errors."""
+    try:
+        val = getattr(cfg, attr)
+        # If it's still an interpolation string that can't resolve, return default
+        if isinstance(val, str) and "${" in val:
+            return default
+        return val
+    except Exception:
+        return default
+
+
+def _inject_hydra_config(data: dict, cls: type) -> None:
+    """If *cls* has a ``hydra: HydraConfig`` field, populate it from HydraConfig.get()."""
+    from hydra_typing import HydraConfig as HC
+
+    hints = typing.get_type_hints(cls)
+    if "hydra" not in hints:
+        return
+
+    hydra_field_type = hints["hydra"]
+    if not dataclasses.is_dataclass(_unwrap_optional(hydra_field_type)):
+        return
+
+    try:
+        from hydra.core.hydra_config import HydraConfig as H
+        hc = H.get()
+    except Exception:
+        return  # not inside a hydra run
+
+    # Only populate if user hasn't already overridden it via YAML/CLI
+    if "hydra" not in data or isinstance(data.get("hydra"), dict):
+        hydra_data: dict = data.get("hydra", {}) if isinstance(data.get("hydra"), dict) else {}
+
+        hydra_data.setdefault("run", {})
+        hydra_data.setdefault("sweep", {})
+        hydra_data.setdefault("job", {})
+        hydra_data.setdefault("runtime", {})
+
+        # Run dir — safe access (may contain unresolved ${now:...})
+        if hasattr(hc, "run"):
+            hydra_data["run"].setdefault("dir", _safe_get(hc.run, "dir", ""))
+
+        # Sweep
+        if hasattr(hc, "sweep"):
+            hydra_data["sweep"].setdefault("dir", _safe_get(hc.sweep, "dir", ""))
+            hydra_data["sweep"].setdefault("subdir", _safe_get(hc.sweep, "subdir", ""))
+
+        # Job
+        if hasattr(hc, "job"):
+            hydra_data["job"].setdefault("name", _safe_get(hc.job, "name", ""))
+            hydra_data["job"].setdefault("num", _safe_get(hc.job, "num", 0))
+            hydra_data["job"].setdefault("id", _safe_get(hc.job, "id", ""))
+            hydra_data["job"].setdefault("override_dirname", _safe_get(hc.job, "override_dirname", ""))
+            hydra_data["job"].setdefault("config_name", _safe_get(hc.job, "config_name", None))
+
+        # Runtime
+        if hasattr(hc, "runtime"):
+            hydra_data["runtime"].setdefault("version", _safe_get(hc.runtime, "version", ""))
+            hydra_data["runtime"].setdefault("cwd", _safe_get(hc.runtime, "cwd", ""))
+            hydra_data["runtime"].setdefault("output_dir", _safe_get(hc.runtime, "output_dir", ""))
+
+        # Output subdir
+        hydra_data.setdefault("output_subdir", _safe_get(hc, "output_subdir", ".hydra"))
+
+        # Overrides — these are lists, no interpolation issues
+        if hasattr(hc, "overrides"):
+            hydra_data.setdefault("overrides", {
+                "task": list(getattr(hc.overrides, "task", [])),
+                "hydra": list(getattr(hc.overrides, "hydra", [])),
+            })
+
+        # Verbose
+        hydra_data.setdefault("verbose", _safe_get(hc, "verbose", False))
+
+        data["hydra"] = hydra_data
 
 
 # ---------------------------------------------------------------------------

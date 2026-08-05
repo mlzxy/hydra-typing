@@ -50,6 +50,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 # One import — transparently makes @hydra.main typed
 import hydra  # noqa: E402
 import hydra_typing; hydra_typing.patch()  # noqa: E402, E702
+from hydra_typing import HydraConfig  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -137,10 +138,20 @@ class DataConfig:
 
 @dataclass
 class TrainConfig:
-    """Top-level training configuration."""
+    """Top-level training configuration.
+
+    Built-in Hydra config is typed too — just add ``hydra: HydraConfig``::
+
+        cfg.hydra.run.dir          # "outputs/2026-08-05/14-30-00"
+        cfg.hydra.job.name         # "train"
+        cfg.hydra.job.num          # 0 (or sweep index)
+        cfg.hydra.runtime.cwd      # original working directory
+        cfg.hydra.overrides.task   # ["model=large", "lr=0.001"]
+    """
     model: ModelConfig = field(default_factory=ModelConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     data: DataConfig = field(default_factory=DataConfig)
+    hydra: HydraConfig = field(default_factory=HydraConfig)  # typed!
     exp_name: str = "default"
     seed: int = 42
     max_steps: int = 10000
@@ -175,6 +186,11 @@ def main(cfg: TrainConfig) -> None:
           f"warmup_ratio={cfg.optimizer.warmup_ratio}")
     print(f"Data:       {cfg.data.path}, batch={cfg.data.batch_size}")
     print(f"Seed:       {cfg.seed}")
+
+    # Typed access to Hydra's built-in config
+    print(f"\nHydra run dir:  {cfg.hydra.run.dir}")
+    print(f"Hydra job:      {cfg.hydra.job.name} (#{cfg.hydra.job.num})")
+    print(f"Overrides:      {cfg.hydra.overrides.get('task', [])}")
 
     print(f"\nTraining for {cfg.max_steps} steps...")
 
