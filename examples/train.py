@@ -50,7 +50,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 # One import — transparently makes @hydra.main typed
 import hydra  # noqa: E402
 import hydra_typing; hydra_typing.patch()  # noqa: E402, E702
-from hydra_typing import HydraConfig, to_omegaconf  # noqa: E402
+from hydra_typing import HydraConfig  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -221,15 +221,16 @@ def main(cfg: TrainConfig) -> None:
 
     # _target_ is a regular typed field — accessible like any other
     if cfg.model.lora is not None:
-        print(f"LoRA:           _target_={cfg.model.lora._target_}, "
+        print(f"LoRA config:    _target_={cfg.model.lora._target_}, "
               f"rank={cfg.model.lora.rank}, "
-              f"alpha={cfg.model.lora.alpha}, "
-              f"scaling={cfg.model.lora.scaling:.2f}")
+              f"alpha={cfg.model.lora.alpha}")
 
-    # to_omegaconf — convert back to OmegaConf DictConfig for 100% compat
-    oc = to_omegaconf(cfg)
-    print(f"\nOmegaConf round-trip: type={type(oc).__name__}, "
-          f"optimizer.lr={oc.optimizer.lr}")  # all OmegaConf APIs work
+        # Deferred instantiate: to_omegaconf → hydra.utils.instantiate
+        import hydra.utils  # noqa: E402
+        oc = hydra_typing.to_omegaconf(cfg)
+        lora_module = hydra.utils.instantiate(oc.model.lora)
+        print(f"LoRA instance:  type={type(lora_module).__name__}, "
+              f"scaling={lora_module.scaling:.2f}")
 
     print(f"\nTraining for {cfg.max_steps} steps...")
 
