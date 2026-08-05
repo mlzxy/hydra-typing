@@ -89,7 +89,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Ty
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __all__ = [
     "patch",
     "hydra_main",
