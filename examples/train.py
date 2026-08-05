@@ -48,8 +48,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
 # One import — transparently makes @hydra.main typed
-import hydra_typing; hydra_typing.patch()  # noqa: E402, E702
 import hydra  # noqa: E402
+import hydra_typing; hydra_typing.patch()  # noqa: E402, E702
 
 
 # ---------------------------------------------------------------------------
