@@ -2,21 +2,32 @@
 hydra_typing — Typed Configs for Hydra
 =======================================
 
-**Hydra sidecar** that adds type-safe dataclass configs to Hydra.
+**One job: make Hydra configs typed.**
 
-Two ways to use it, both equally transparent:
+Your ``@hydra.main`` function receives a ``DictConfig``.  After one import,
+it receives your ``@dataclass`` instance instead — with full IDE
+autocompletion, mypy/pyright checking, and all Python types supported
+(``Literal``, ``Enum``, ``Union``, ``Path``, ``datetime``, nested
+dataclasses, etc.).
 
-1. **One-liner patch** (transparent — keep your ``@hydra.main``)::
+Install: ``pip install hydra-typing``  (one dependency: ``hydra-core``).
+
+Quickstart — transparent patch (recommended)
+---------------------------------------------
+
+.. code-block:: python
 
     import hydra_typing; hydra_typing.patch()
 
     @hydra.main(config_path="conf", config_name="base", version_base=None)
     def main(cfg: TrainConfig) -> None:
-        '''cfg is a typed TrainConfig — not a DictConfig.'''
-        print_config(cfg)                       # auto-detects overrides
-        print(f"Training {cfg.exp_name}")
+        # cfg is typed!  No DictConfig, no OmegaConf.
+        print(f"Training {cfg.exp_name} with dim={cfg.model.hidden_dim}")
 
-2. **Decorator** (explicit drop-in for ``@hydra.main``)::
+Explicit decorator
+------------------
+
+.. code-block:: python
 
     from hydra_typing import hydra_main
 
@@ -24,66 +35,25 @@ Two ways to use it, both equally transparent:
     def main(cfg: TrainConfig) -> None:
         ...
 
-All Hydra features work unchanged: YAML composition, ``defaults:`` groups,
-``${}`` interpolation, CLI override grammar, ``--multirun`` sweeps, launchers,
-sweepers, output management.
+Programmatic (notebooks)
+-------------------------
 
-Install: ``pip install hydra-typing`` (one dependency: ``hydra-core``).
-
-Run with standard Hydra CLI::
-
-    python train.py model=large lr=0.001 exp_name=test
-    python train.py model.hidden_dim=512 +optimizer.momentum=0.9
-    python train.py --multirun lr=1e-4,3e-4,1e-3
-    python train.py --help
-
-For programmatic use (notebooks, scripts)::
+.. code-block:: python
 
     from hydra_typing import load_config
+
     cfg = load_config(TrainConfig, config_name="base",
                       overrides=["model=large", "lr=0.001"])
 
-How it works
-------------
+All Hydra features unchanged: ``defaults:`` groups, ``${}`` interpolation,
+CLI overrides, ``--multirun`` sweeps, launchers, sweepers, output management.
 
-1. **Schema extraction**: the config type is inferred from your function's
-   type annotation (``cfg: TrainConfig``). No separate schema registration.
-
-2. **Hydra does its thing**: YAML composition, ``defaults:`` groups,
-   ``${}`` interpolation, CLI parsing, output management — all standard.
-
-3. **Typed conversion**: after Hydra composes the ``DictConfig``, we convert
-   it to your typed dataclass via ``OmegaConf.to_container`` + type validation
-   supporting the full Python typing vocabulary.
-
-4. **Your code**: receives a real, typed Python object. IDE autocompletion,
-   mypy/pyright checking, and attribute-access all work.
-
-``print_config`` auto-detects overrides from ``HydraConfig`` — call it
-with no arguments::
-
-    print_config(cfg)  # highlights overridden values automatically
-
-CLI Override Grammar (standard Hydra)
---------------------------------------
-
-=======  ===============================  ==============================
-Syntax   Meaning                           Example
-=======  ===============================  ==============================
-``k=v``  Override config value             ``model.hidden_dim=512``
-``+k=v`` Append new key                    ``+optimizer.momentum=0.9``
-``++k=v`` Force-set (override if exists)   ``++seed=42``
-``~k``   Delete a key                      ``~wandb_project``
-``a,b``  Sweep (with ``--multirun``)       ``lr=1e-4,3e-4,1e-3``
-=======  ===============================  ==============================
-
-API Reference
--------------
+API
+---
 
 .. autofunction:: patch
 .. autofunction:: hydra_main
 .. autofunction:: load_config
-.. autofunction:: print_config
 .. autofunction:: to_plain
 .. autoexception:: ConfigError
 """
@@ -91,25 +61,26 @@ API Reference
 from __future__ import annotations
 
 import dataclasses
+import datetime
+import enum
 import functools
 import os
 import types
 import typing
-from typing import Any, Callable, List, Optional, Type, TypeVar
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-# Re-export
+# Re-export type conversion (used internally, public for advanced use)
 from hydra_typing._convert import dict_to_typed, field_map
-from hydra_typing._print import to_plain, _print_config
 
 __version__ = "0.2.0"
 __all__ = [
     "patch",
     "hydra_main",
     "load_config",
-    "print_config",
     "to_plain",
     "ConfigError",
 ]
@@ -154,42 +125,6 @@ def _extract_schema(fn: Callable) -> Type[Any]:
     return _unwrap_optional(schema)
 
 
-def _get_overrides() -> List[str]:
-    """Auto-detect applied overrides from HydraConfig (if inside a hydra run)."""
-    try:
-        from hydra.core.hydra_config import HydraConfig
-        return HydraConfig.get().overrides.task
-    except Exception:
-        return []
-
-
-# ---------------------------------------------------------------------------
-# print_config — auto-detects overrides from HydraConfig
-# ---------------------------------------------------------------------------
-
-
-def print_config(
-    cfg: Any,
-    overrides: Optional[List[str]] = None,
-    use_color: bool = True,
-) -> str:
-    """Pretty-print a resolved dataclass config, highlighting overridden values.
-
-    Overrides are **auto-detected** from ``HydraConfig`` when called inside a
-    hydra run — just call ``print_config(cfg)`` with no overrides argument.
-
-    Args:
-        cfg: A resolved dataclass config instance.
-        overrides: Optional override strings. If ``None``, auto-detected.
-        use_color: If ``True`` (default), use ANSI terminal colors.
-
-    Colors: **green** = defaults, **yellow** = overridden, **cyan** = headers.
-    """
-    if overrides is None:
-        overrides = _get_overrides()
-    return _print_config(cfg, overrides=overrides, use_color=use_color)
-
-
 # ---------------------------------------------------------------------------
 # patch() — transparently make @hydra.main typed
 # ---------------------------------------------------------------------------
@@ -201,10 +136,11 @@ _patched = False
 def patch() -> None:
     """Patch ``hydra.main`` so ``@hydra.main`` delivers typed configs.
 
-    After calling this once (typically at import time), your existing
-    ``@hydra.main`` code works unchanged — but the config object passed
-    to your function is a **typed dataclass instance** instead of a
-    ``DictConfig``.
+    Call once (typically at import time).  After that, any ``@hydra.main``
+    function whose first parameter has a ``@dataclass`` type annotation
+    receives a typed instance instead of a ``DictConfig``.
+
+    Functions *without* typed annotations are left alone — no breakage.
 
     Usage::
 
@@ -212,12 +148,8 @@ def patch() -> None:
 
         @hydra.main(config_path="conf", config_name="base", version_base=None)
         def main(cfg: TrainConfig) -> None:
-            # cfg is typed! IDE autocompletion works.
-            print_config(cfg)
-
-    The schema is inferred from the function's type annotation
-    (``cfg: TrainConfig``).  If the annotation is missing or not a
-    ``@dataclass``, the function is left unpatched — no breakage.
+            # cfg is a typed TrainConfig instance
+            print(cfg.model.hidden_dim)  # IDE autocompletion works
     """
     global _patched
     if _patched:
@@ -238,17 +170,14 @@ def patch() -> None:
         )
 
         def _wrapper(fn: Callable) -> Callable:
-            # Try to extract schema from annotation
             try:
                 schema = _extract_schema(fn)
             except ConfigError:
-                # No typed annotation — pass through unchanged
-                return decorator(fn)
+                return decorator(fn)  # no typed annotation — pass through
 
             params = [k for k in fn.__code__.co_varnames[:fn.__code__.co_argcount]]
             cfg_param = params[0]
 
-            # Wrap fn: intercept DictConfig, convert to typed, pass to original
             @functools.wraps(fn)
             def _typed_fn(*args: Any, **kwargs: Any) -> Any:
                 if args and isinstance(args[0], DictConfig):
@@ -277,15 +206,16 @@ def hydra_main(
     version_base: Optional[str] = None,
     schema: Optional[Type[Any]] = None,
 ) -> Callable:
-    """Drop-in replacement for ``@hydra.main`` that delivers typed configs.
+    """Explicit drop-in for ``@hydra.main`` that delivers typed configs.
+
+    Same as ``patch()`` but explicit per-function.  Use when you want to
+    opt in selectively rather than patching globally.
 
     Usage::
 
         @hydra_main(config_path="conf", config_name="base")
         def main(cfg: TrainConfig) -> None:
             print(cfg.model.hidden_dim)  # typed!
-
-    All standard Hydra features work unchanged.
     """
     def decorator(fn: Callable[..., T]) -> Callable[..., T]:
         actual_schema = schema or _extract_schema(fn)
@@ -324,7 +254,7 @@ def load_config(
 ) -> T:
     """Load a typed config programmatically (notebooks, scripts).
 
-    Uses Hydra's ``initialize`` + ``compose``, then converts to typed dataclass.
+    Uses Hydra's ``initialize`` + ``compose``, then converts to typed.
 
     Example::
 
@@ -342,6 +272,30 @@ def load_config(
         dict_cfg = hydra.compose(config_name=config_name, overrides=overrides or [])
         plain = OmegaConf.to_container(dict_cfg, resolve=True, enum_to_str=True)
         return typing.cast(T, dict_to_typed(plain, schema))
+
+
+# ---------------------------------------------------------------------------
+# to_plain — dataclass → plain dict
+# ---------------------------------------------------------------------------
+
+
+def to_plain(cfg: Any) -> dict:
+    """Convert a dataclass config tree to a plain dict (for YAML / JSON dump)."""
+    if dataclasses.is_dataclass(cfg):
+        return {f.name: to_plain(getattr(cfg, f.name)) for f in dataclasses.fields(cfg)}
+    if isinstance(cfg, dict):
+        return {str(k): to_plain(v) for k, v in cfg.items()}
+    if isinstance(cfg, (list, tuple)):
+        return [to_plain(item) for item in cfg]
+    if isinstance(cfg, enum.Enum):
+        return cfg.value
+    if isinstance(cfg, Path):
+        return str(cfg)
+    if isinstance(cfg, datetime.datetime):
+        return cfg.isoformat()
+    if isinstance(cfg, datetime.date):
+        return cfg.isoformat()
+    return cfg
 
 
 # ---------------------------------------------------------------------------

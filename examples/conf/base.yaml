@@ -14,6 +14,29 @@ seed: 42
 max_steps: 10000
 eval_every: 500
 
+# List[dataclass] — override individual elements via CLI:
+#   python train.py model.layers.0.dim=1024 model.layers.1.type=mlp
+model:
+  layers:
+    - type: attention
+      dim: 256
+      heads: 8
+      dropout: 0.0
+    - type: mlp
+      dim: 512
+      heads: 1
+      dropout: 0.0
+
+  # Dict[str, dataclass] — override by key via CLI:
+  #   python train.py model.heads.attention.dim=512 model.heads.mlp.ratio=8
+  heads:
+    attention:
+      dim: 128
+      ratio: 4
+    mlp:
+      dim: 256
+      ratio: 8
+
 # WandB (optional)
 wandb_project: null
 wandb_entity: null

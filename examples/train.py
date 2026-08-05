@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 """
-train.py — Example CLI using hydra_typing (Hydra + typed dataclass configs).
+train.py — Example CLI using hydra_typing (transparent patch mode).
 
-Two approaches shown — pick one:
+One import makes @hydra.main deliver typed configs.  All Hydra features
+work unchanged — YAML composition, ${} interpolation, --multirun, etc.
 
-1. Transparent patch (preferred): ``hydra_typing.patch()`` then use
-   standard ``@hydra.main`` — your config arrives typed automatically.
-
-2. Explicit decorator: ``@hydra_main`` as drop-in for ``@hydra.main``.
-
-Run with standard Hydra CLI — no argparse, no ``-o`` flags::
+==== Basic usage (standard Hydra CLI) ==========================================
 
     python train.py
     python train.py model=large optimizer.lr=0.001 exp_name=big_run
@@ -18,10 +14,26 @@ Run with standard Hydra CLI — no argparse, no ``-o`` flags::
     python train.py --multirun lr=1e-4,3e-4,1e-3
     python train.py --help
 
-Output goes to ``outputs/<date>/<time>/`` with:
-  - ``.hydra/config.yaml`` — fully resolved config
-  - ``.hydra/hydra.yaml`` — hydra configuration
-  - ``.hydra/overrides.yaml`` — applied overrides
+==== Overriding nested fields (dotted paths) ===================================
+
+    python train.py model.hidden_dim=512 optimizer.weight_decay=0.1
+
+==== Overriding list elements (0-indexed) ======================================
+
+    # layers is List[LayerConfig].  Index into it:
+    python train.py layers.0.dim=1024 layers.1.type=mlp
+
+    # Append a new element with +:
+    python train.py +layers.2.type=conv +layers.2.kernel=3
+
+==== Overriding dict values ====================================================
+
+    # heads is Dict[str, HeadConfig].  Access by key:
+    python train.py heads.attention.dim=512 heads.mlp.ratio=8
+
+==== Sweeps over nested fields =================================================
+
+    python train.py --multirun layers.0.dim=256,512,1024
 """
 
 from __future__ import annotations
@@ -29,24 +41,57 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Optional, Literal
+from typing import Optional, Literal, List, Dict
 
-# Add repo root so hydra_typing is importable
+# Make the package importable from the repo root
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-import hydra_typing  # noqa: E402
-from hydra_typing import hydra_main, print_config, ConfigError  # noqa: E402
+# One import — transparently makes @hydra.main typed
+import hydra_typing; hydra_typing.patch()  # noqa: E402, E702
+import hydra  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Config dataclasses — single source of truth for schema + typing + CLI
+# Config dataclasses — single source of truth
 # ---------------------------------------------------------------------------
 
 
 @dataclass
+class LayerConfig:
+    """A single transformer layer."""
+    type: Literal["attention", "mlp", "conv"] = "attention"
+    dim: int = 256
+    heads: int = 8
+    dropout: float = 0.0
+
+
+@dataclass
+class HeadConfig:
+    """Configuration for a specific head/module."""
+    dim: int = 128
+    ratio: int = 4
+
+
+@dataclass
 class ModelConfig:
-    """Model architecture."""
+    """Model architecture with nested collections.
+
+    Demonstrates List[dataclass] and Dict[str, dataclass]:
+      - ``layers``: ordered list of layer configs
+      - ``heads``: named dict of head configs
+
+    CLI override examples::
+
+        # List elements by index
+        python train.py model.layers.0.dim=1024 model.layers.1.type=mlp
+
+        # Dict elements by key
+        python train.py model.heads.attention.dim=512
+
+        # Append to list
+        python train.py +model.layers.2.type=conv +model.layers.2.dim=512
+    """
     hidden_dim: int = 256
     num_layers: int = 6
     num_heads: int = 8
@@ -54,6 +99,14 @@ class ModelConfig:
     activation: Literal["relu", "gelu", "silu"] = "gelu"
     vocab_size: int = 32000
     max_seq_len: int = 2048
+    layers: List[LayerConfig] = field(default_factory=lambda: [
+        LayerConfig(type="attention", dim=256, heads=8),
+        LayerConfig(type="mlp", dim=512, heads=1),
+    ])
+    heads: Dict[str, HeadConfig] = field(default_factory=lambda: {
+        "attention": HeadConfig(dim=128, ratio=4),
+        "mlp": HeadConfig(dim=256, ratio=8),
+    })
 
 
 @dataclass
@@ -67,7 +120,7 @@ class OptimizerConfig:
     eps: float = 1e-8
     momentum: float = 0.0
     lr_scheduler: Literal["cosine", "linear", "constant"] = "cosine"
-    warmup_ratio: float = 0.1  # fraction of max_steps for warmup
+    warmup_ratio: float = 0.1
 
 
 @dataclass
@@ -84,13 +137,7 @@ class DataConfig:
 
 @dataclass
 class TrainConfig:
-    """Top-level training configuration.
-
-    Run with::
-
-        python train.py model=large lr=0.001 exp_name=my_run
-        python train.py --multirun lr=1e-4,3e-4,1e-3
-    """
+    """Top-level training configuration."""
     model: ModelConfig = field(default_factory=ModelConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     data: DataConfig = field(default_factory=DataConfig)
@@ -103,30 +150,33 @@ class TrainConfig:
 
 
 # ---------------------------------------------------------------------------
-# Main — decorated with @pm.cli for typed config + hydra CLI
+# Main — vanilla @hydra.main, but cfg is typed thanks to hydra_typing.patch()
 # ---------------------------------------------------------------------------
 
-@hydra_main(config_path="conf", config_name="base")
+
+@hydra.main(config_path="conf", config_name="base", version_base=None)
 def main(cfg: TrainConfig) -> None:
     """Train a model — cfg is a fully typed TrainConfig instance."""
 
-    # Color-printed config — overrides auto-detected from HydraConfig
-    print_config(cfg)
-
-    # --- Your training code goes here ---
-    print()
     print(f"Experiment: {cfg.exp_name}")
-    print(f"Model:      {cfg.model.num_layers} layers, hidden_dim={cfg.model.hidden_dim}")
+    print(f"Model:      {cfg.model.num_layers} layers, "
+          f"hidden_dim={cfg.model.hidden_dim}, "
+          f"heads={cfg.model.num_heads}")
+
+    # List[LayerConfig] — fully typed, IDE knows each element is LayerConfig
+    for i, layer in enumerate(cfg.model.layers):
+        print(f"  layer[{i}]: {layer.type}, dim={layer.dim}, heads={layer.heads}")
+
+    # Dict[str, HeadConfig] — fully typed key-value access
+    for name, head in cfg.model.heads.items():
+        print(f"  head[{name}]: dim={head.dim}, ratio={head.ratio}")
+
     print(f"Optimizer:  {cfg.optimizer.name}, lr={cfg.optimizer.lr}, "
           f"warmup_ratio={cfg.optimizer.warmup_ratio}")
-    print(f"Data:       {cfg.data.path}, batch={cfg.data.batch_size}, "
-          f"image_size={cfg.data.image_size}")
+    print(f"Data:       {cfg.data.path}, batch={cfg.data.batch_size}")
     print(f"Seed:       {cfg.seed}")
-    print(f"WandB:      {cfg.wandb_project or '(disabled)'}")
 
-    # Simulate training
     print(f"\nTraining for {cfg.max_steps} steps...")
-    print("(replace this with your actual training loop)")
 
 
 if __name__ == "__main__":

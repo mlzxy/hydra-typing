@@ -1,28 +1,19 @@
-"""Tests for pm — typed config management (hydra + tyro integration)."""
+"""Tests for hydra_typing — typed configs for Hydra."""
 
 from __future__ import annotations
 
-import json
 import os
-import shutil
 import sys
-import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 import pytest
-import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from hydra_typing import ConfigError, load_config, print_config, to_plain  # noqa: E402
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+from hydra_typing import ConfigError, load_config, to_plain  # noqa: E402
 
 
 def _write_yaml(path: str, content: str) -> None:
@@ -32,7 +23,7 @@ def _write_yaml(path: str, content: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test configs
+# Config fixtures
 # ---------------------------------------------------------------------------
 
 
@@ -72,7 +63,7 @@ class RichCfg:
 
 
 # ---------------------------------------------------------------------------
-# Tests: load_config programmatic API
+# load_config
 # ---------------------------------------------------------------------------
 
 
@@ -81,7 +72,6 @@ class TestLoadConfig:
         conf = tmp_path / "conf"
         conf.mkdir()
         _write_yaml(str(conf / "config.yaml"), "a: 42\nb: yaml_val\n")
-
         cfg = load_config(SimpleCfg, config_path=str(conf), config_name="config")
         assert cfg.a == 42
         assert cfg.b == "yaml_val"
@@ -90,23 +80,15 @@ class TestLoadConfig:
         conf = tmp_path / "conf"
         conf.mkdir()
         _write_yaml(str(conf / "config.yaml"), "a: 1\nb: base\n")
-
-        cfg = load_config(
-            SimpleCfg,
-            config_path=str(conf),
-            config_name="config",
-            overrides=["a=99", "b=overridden"],
-        )
+        cfg = load_config(SimpleCfg, config_path=str(conf), config_name="config",
+                          overrides=["a=99", "b=overridden"])
         assert cfg.a == 99
         assert cfg.b == "overridden"
 
     def test_nested_config(self, tmp_path):
         conf = tmp_path / "conf"
         conf.mkdir()
-        _write_yaml(
-            str(conf / "config.yaml"),
-            "inner:\n  dim: 128\n  dropout: 0.5\nlr: 1e-4\n",
-        )
+        _write_yaml(str(conf / "config.yaml"), "inner:\n  dim: 128\n  dropout: 0.5\nlr: 1e-4\n")
         cfg = load_config(NestedCfg, config_path=str(conf), config_name="config")
         assert cfg.inner.dim == 128
         assert cfg.inner.dropout == 0.5
@@ -116,24 +98,19 @@ class TestLoadConfig:
         conf = tmp_path / "conf"
         conf.mkdir()
         _write_yaml(str(conf / "config.yaml"), "inner:\n  dim: 64\nlr: 3e-4\n")
-        cfg = load_config(
-            NestedCfg,
-            config_path=str(conf),
-            config_name="config",
-            overrides=["inner.dim=256"],
-        )
+        cfg = load_config(NestedCfg, config_path=str(conf), config_name="config",
+                          overrides=["inner.dim=256"])
         assert cfg.inner.dim == 256
 
     def test_non_dataclass_raises(self):
         class NotADataclass:
             pass
-
         with pytest.raises(ConfigError):
             load_config(NotADataclass, config_path="conf")
 
 
 # ---------------------------------------------------------------------------
-# Tests: type conversion
+# Type conversion
 # ---------------------------------------------------------------------------
 
 
@@ -180,7 +157,7 @@ class TestTypeConversion:
 
         conf = tmp_path / "conf"
         conf.mkdir()
-        _write_yaml(str(conf / "config.yaml"), "{}\n")  # empty — name not provided
+        _write_yaml(str(conf / "config.yaml"), "{}\n")
         with pytest.raises(ConfigError, match="required"):
             load_config(ReqCfg, config_path=str(conf), config_name="config")
 
@@ -204,54 +181,49 @@ class TestTypeConversion:
 
 
 # ---------------------------------------------------------------------------
-# Tests: print_config
-# ---------------------------------------------------------------------------
-
-
-class TestPrintConfig:
-    def test_no_color_output(self):
-        cfg = SimpleCfg(a=42, b="test")
-        result = print_config(cfg, use_color=False)
-        assert "[SimpleCfg]" in result
-        assert "a: int = 42" in result
-        assert "b: str = 'test'" in result
-
-    def test_highlights_overrides(self):
-        cfg = SimpleCfg(a=99, b="overridden")
-        result = print_config(cfg, overrides=["a=99"], use_color=False)
-        assert "Overrides applied:" in result
-        assert "a=99" in result
-
-    def test_nested_print(self):
-        cfg = NestedCfg(inner=InnerCfg(dim=128, dropout=0.5), lr=1e-4)
-        result = print_config(cfg, use_color=False)
-        assert "[NestedCfg]" in result
-        assert "[InnerCfg]" in result
-        assert "dim: int = 128" in result
-
-    def test_returns_string(self):
-        result = print_config(SimpleCfg(), use_color=False)
-        assert isinstance(result, str)
-
-
-# ---------------------------------------------------------------------------
-# Tests: to_plain
+# to_plain
 # ---------------------------------------------------------------------------
 
 
 class TestToPlain:
     def test_simple(self):
-        cfg = SimpleCfg(a=99, b="test", c=1.5, flag=False)
-        plain = to_plain(cfg)
+        plain = to_plain(SimpleCfg(a=99, b="test", c=1.5, flag=False))
         assert plain == {"a": 99, "b": "test", "c": 1.5, "flag": False}
 
     def test_nested(self):
-        cfg = NestedCfg(inner=InnerCfg(dim=128, dropout=0.5), lr=1e-4)
-        plain = to_plain(cfg)
+        plain = to_plain(NestedCfg(inner=InnerCfg(dim=128, dropout=0.5), lr=1e-4))
         assert plain == {"inner": {"dim": 128, "dropout": 0.5}, "lr": 1e-4}
 
     def test_enum_path(self):
-        cfg = RichCfg(scheduler=Scheduler.LINEAR, path=Path("/data"))
-        plain = to_plain(cfg)
+        plain = to_plain(RichCfg(scheduler=Scheduler.LINEAR, path=Path("/data")))
         assert plain["scheduler"] == "linear"
         assert plain["path"] == "/data"
+
+
+# ---------------------------------------------------------------------------
+# patch()
+# ---------------------------------------------------------------------------
+
+
+class TestPatch:
+    def test_patch_idempotent(self):
+        from hydra_typing import patch
+        import hydra
+
+        patch()
+        fn_before = hydra.main
+        patch()
+        assert hydra.main is fn_before  # second call is no-op
+
+    def test_untyped_function_passthrough(self):
+        """patch() should not break functions without typed annotations."""
+        from hydra_typing import patch
+        import hydra
+
+        patch()
+
+        @hydra.main(config_path="examples/conf", config_name="base", version_base=None)
+        def untyped(cfg):
+            pass
+
+        assert callable(untyped)
