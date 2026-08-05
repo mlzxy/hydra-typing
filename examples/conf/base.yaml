@@ -1,0 +1,19 @@
+# Base training config — composes model, optimizer, and data via defaults groups.
+# Run with: python train.py --config base
+# Override with: python train.py --config base -o model=large optimizer.lr=0.001
+
+defaults:
+  - model: base       # loads conf/model/base.yaml → merged under "model"
+  - optimizer: adamw  # loads conf/optimizer/adamw.yaml → merged under "optimizer"
+  - data: imagenet    # loads conf/data/imagenet.yaml → merged under "data"
+
+# Top-level experiment settings
+exp_name: default
+seed: 42
+max_steps: 10000
+eval_every: 500
+log_dir: runs/${exp_name}/${now:%Y-%m-%d_%H-%M-%S}
+
+# WandB (optional)
+wandb_project: null
+wandb_entity: null

@@ -1,0 +1,8 @@
+# Model architecture — large variant (for final training)
+hidden_dim: 512
+num_layers: 12
+num_heads: 16
+dropout: 0.1
+activation: gelu
+vocab_size: 32000
+max_seq_len: 4096

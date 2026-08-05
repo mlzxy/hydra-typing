@@ -1,0 +1,10 @@
+# Optimizer — AdamW (default)
+name: adamw
+lr: 3e-4
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+eps: 1e-8
+# LR scheduler
+lr_scheduler: cosine
+warmup_steps: "${eval:int(${max_steps} * 0.1)}"   # 10% warmup — references top-level max_steps

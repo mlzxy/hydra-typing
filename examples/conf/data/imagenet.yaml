@@ -1,0 +1,8 @@
+# Data config — ImageNet
+path: /data/imagenet
+batch_size: 32
+num_workers: 4
+shuffle: true
+augment: true
+image_size: 224
+pin_memory: true

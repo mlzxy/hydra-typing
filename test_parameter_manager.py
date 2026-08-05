@@ -1,4 +1,4 @@
-"""Comprehensive tests for parameter_manager.
+"""Comprehensive tests for pm.
 
 Run with: pytest test_parameter_manager.py -v
 """
@@ -19,9 +19,8 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import pytest
 import yaml
 
-# Allow importing parameter_manager from the repo root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from parameter_manager import (  # noqa: E402
+from pm import (  # noqa: E402
     ConfigError,
     InterpolationError,
     TypeConversionError,
@@ -736,7 +735,7 @@ exp_name: my_experiment
 
     def test_output_save_with_interpolation(self, tmp_conf_dir):
         """Save output with interpolated log_dir to temp directory."""
-        import parameter_manager as pm
+        import pm
 
         out_dir = tmp_conf_dir / "runs"
         cfg = load_config(
@@ -771,7 +770,7 @@ class TestEdgeCases:
         assert cfg.a == 1
 
     def test_save_false(self, tmp_conf_dir):
-        import parameter_manager as pm
+        import pm
 
         prev = pm.last_output_dir
         out_dir = str(tmp_conf_dir / "should_not_exist")

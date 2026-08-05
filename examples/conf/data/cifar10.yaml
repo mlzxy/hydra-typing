@@ -1,0 +1,8 @@
+# Data config — CIFAR-10 (smaller images, larger batches)
+path: /data/cifar10
+batch_size: 128
+num_workers: 2
+shuffle: true
+augment: true
+image_size: 32
+pin_memory: true

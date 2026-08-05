@@ -1,0 +1,11 @@
+# Model architecture — base (default) variant
+# Selected via: defaults: [{model: base}] in base.yaml
+# Override via: --config base -o model=large
+
+hidden_dim: 256
+num_layers: 6
+num_heads: 8
+dropout: 0.1
+activation: gelu
+vocab_size: 32000
+max_seq_len: 2048

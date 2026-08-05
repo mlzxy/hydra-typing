@@ -1,0 +1,8 @@
+# Model architecture — small variant (for quick experiments)
+hidden_dim: 128
+num_layers: 4
+num_heads: 4
+dropout: 0.1
+activation: gelu
+vocab_size: 32000
+max_seq_len: 1024

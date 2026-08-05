@@ -1,5 +1,5 @@
 """
-parameter_manager — Typed Configuration Management for ML Projects
+pm — Typed Configuration Management for ML Projects
 ==================================================================
 
 Combines the best of **Hydra** (YAML config composition, ``${}`` interpolation,
@@ -18,7 +18,7 @@ Quickstart
 .. code-block:: python
 
     from dataclasses import dataclass, field
-    from parameter_manager import load_config
+    from pm import load_config
 
     @dataclass
     class ModelConfig:
@@ -236,6 +236,7 @@ __all__ = [
     "load_config",
     "save_config",
     "parse_overrides",
+    "print_config",
     "render_help",
     "to_plain",
     "last_output_dir",
@@ -251,7 +252,7 @@ __all__ = [
 
 
 class ConfigError(Exception):
-    """Base exception for all parameter_manager errors."""
+    """Base exception for all pm errors."""
 
 
 class InterpolationError(ConfigError):
@@ -1308,15 +1309,16 @@ def render_help(cls: type) -> str:
           lr : float = 3e-4
           ...
     """
-    lines = _render_help_inner(cls, indent=0)
+    lines = _render_help_inner(cls, indent=0, is_root=True)
     return "\n".join(lines)
 
 
-def _render_help_inner(cls: type, indent: int = 0, prefix: str = "") -> List[str]:
+def _render_help_inner(cls: type, indent: int = 0, prefix: str = "", is_root: bool = True) -> List[str]:
     lines: List[str] = []
-    if indent == 0:
-        lines.append(f"{cls.__name__}")
-    else:
+    if is_root:
+        label = f"{prefix} ({cls.__name__})" if prefix else cls.__name__
+        lines.append(f"{'  ' * indent}{label}")
+    elif prefix:
         lines.append(f"{'  ' * indent}{prefix} ({cls.__name__})")
 
     for name, info in _field_map(cls).items():
@@ -1326,7 +1328,7 @@ def _render_help_inner(cls: type, indent: int = 0, prefix: str = "") -> List[str
 
         if k == "dataclass":
             lines.append(f"{spacer}{name} ({field_type.__name__})")
-            lines.extend(_render_help_inner(field_type, indent + 2, ""))
+            lines.extend(_render_help_inner(field_type, indent + 2, is_root=False))
             continue
 
         type_name = _type_display_name(field_type)
@@ -1352,6 +1354,164 @@ def _type_display_name(t: Any) -> str:
     if isinstance(t, type):
         return t.__name__
     return str(t)
+
+
+# ---------------------------------------------------------------------------
+# Color config printing
+# ---------------------------------------------------------------------------
+
+# ANSI escape codes for terminal colors
+_BOLD = "\033[1m"
+_DIM = "\033[2m"
+_GREEN = "\033[32m"
+_YELLOW = "\033[33m"
+_CYAN = "\033[36m"
+_RESET = "\033[0m"
+
+
+def print_config(
+    cfg: Any,
+    overrides: Optional[Dict[str, str]] = None,
+    use_color: bool = True,
+) -> str:
+    """Pretty-print a resolved config, highlighting overridden values.
+
+    Args:
+        cfg: A resolved dataclass config instance.
+        overrides: Optional dict of ``{dotted.path: raw_value}`` that were applied.
+                   Paths in this set are highlighted in yellow.
+        use_color: If ``True`` (default), use ANSI terminal colors.
+
+    Returns:
+        The formatted string (also printed to stdout).
+
+    Colors (when ``use_color=True``):
+        - **Green**: default values (unchanged).
+        - **Yellow**: values that were explicitly overridden.
+        - **Cyan**: section headers.
+        - **Dim**: type annotations and separators.
+    """
+    overrides = overrides or {}
+    override_paths = set(overrides.keys())
+    lines: List[str] = []
+    _print_config_inner(cfg, "", override_paths, lines, use_color)
+    result = "\n".join(lines)
+
+    # Print summary
+    if override_paths:
+        applied = {k: v for k, v in overrides.items()}
+        summary_lines = [
+            "",
+            f"{_BOLD}{_YELLOW}Overrides applied:{_RESET}" if use_color else "Overrides applied:",
+        ]
+        for k, v in sorted(applied.items()):
+            if use_color:
+                summary_lines.append(f"  {_YELLOW}{k}{_RESET}{_DIM} = {_RESET}{_YELLOW}{v}{_RESET}")
+            else:
+                summary_lines.append(f"  {k} = {v}")
+        result += "\n" + "\n".join(summary_lines)
+
+    print(result)
+    return result
+
+
+def _print_config_inner(
+    obj: Any,
+    path: str,
+    override_paths: set,
+    lines: List[str],
+    use_color: bool,
+    indent: int = 0,
+    is_last: bool = False,
+) -> None:
+    """Recursive helper for ``print_config``."""
+    prefix = "  " * indent
+
+    if dataclasses.is_dataclass(obj):
+        name = type(obj).__name__
+        header = f"{prefix}{_BOLD}{_CYAN}[{name}]{_RESET}" if use_color else f"{prefix}[{name}]"
+        lines.append(header)
+        fields = list(dataclasses.fields(obj))
+        for i, f in enumerate(fields):
+            val = getattr(obj, f.name)
+            child_path = f"{path}.{f.name}" if path else f.name
+            _print_config_inner(
+                val, child_path, override_paths, lines, use_color, indent + 1,
+                is_last=(i == len(fields) - 1),
+            )
+        return
+
+    if isinstance(obj, dict):
+        for i, (k, v) in enumerate(obj.items()):
+            child_path = f"{path}.{k}" if path else k
+            _print_config_inner(
+                v, child_path, override_paths, lines, use_color, indent,
+                is_last=False,
+            )
+        return
+
+    if isinstance(obj, (list, tuple)):
+        for i, item in enumerate(obj):
+            child_path = f"{path}[{i}]"
+            _print_config_inner(
+                item, child_path, override_paths, lines, use_color, indent,
+                is_last=False,
+            )
+        return
+
+    # Leaf value
+    field_name = path.split(".")[-1] if "." in path else path
+    is_overridden = path in override_paths or _has_override_prefix(path, override_paths)
+
+    if is_overridden:
+        color = _YELLOW if use_color else ""
+    else:
+        color = _GREEN if use_color else ""
+
+    val_repr = _format_value(obj)
+    type_name = type(obj).__name__
+
+    if use_color:
+        line = f"{prefix}{color}{field_name}{_RESET}{_DIM}: {type_name} = {_RESET}{color}{val_repr}{_RESET}"
+    else:
+        line = f"{prefix}{field_name}: {type_name} = {val_repr}"
+
+    # Add override marker
+    if is_overridden and use_color:
+        line += f"  {_YELLOW}{_BOLD}# <-- overridden{_RESET}"
+
+    lines.append(line)
+
+
+def _has_override_prefix(path: str, override_paths: set) -> bool:
+    """Check if *path* or any parent is in *override_paths*."""
+    parts = path.split(".")
+    for i in range(len(parts)):
+        if ".".join(parts[: i + 1]) in override_paths:
+            return True
+    return False
+
+
+def _format_value(val: Any) -> str:
+    """Format a scalar value for display."""
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, float):
+        if val == 0 or (abs(val) >= 1e-4 and abs(val) <= 1e6):
+            return f"{val:g}"
+        return f"{val:.4e}"
+    if isinstance(val, str) and len(val) > 60:
+        return f'"{val[:57]}..."'
+    if isinstance(val, enum.Enum):
+        return val.name
+    if isinstance(val, Path):
+        return str(val)
+    if isinstance(val, (list, tuple)):
+        items = [_format_value(v) for v in val]
+        if len(items) <= 5:
+            return "[" + ", ".join(items) + "]"
+        return "[" + ", ".join(items[:3]) + f", ... ({len(items)} items)]"
+    return repr(val)
 
 
 # ---------------------------------------------------------------------------
