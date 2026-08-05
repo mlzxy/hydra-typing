@@ -1102,10 +1102,20 @@ def _convert(
                 return int(value)
             raise TypeConversionError(f"{path}: lossy float→int conversion: {value}")
         if isinstance(value, str):
+            v = value.strip()
+            # Try direct int parse
             try:
-                return int(value.strip())
+                return int(v)
             except ValueError:
-                raise TypeConversionError(f"{path}: expected int, got {value!r}")
+                pass
+            # Try float parse → int if lossless (e.g. "3.0" → 3)
+            try:
+                fv = float(v)
+                if fv == int(fv):
+                    return int(fv)
+                raise TypeConversionError(f"{path}: lossy float→int conversion: {v!r}")
+            except ValueError:
+                raise TypeConversionError(f"{path}: expected int, got {v!r}")
         raise TypeConversionError(f"{path}: expected int, got {type(value).__name__} {value!r}")
 
     # 17. float
