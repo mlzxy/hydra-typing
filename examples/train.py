@@ -139,17 +139,23 @@ class ModelConfig:
 
 
 @dataclass
-class OptimizerConfig:
-    """Optimizer + LR schedule."""
-    name: Literal["adam", "adamw", "sgd"] = "adamw"
+class AdamConfig:
+    """Adam/AdamW optimizer."""
+    _type_: Literal["adam"] = "adam"   # discriminator for Union routing
     lr: float = 3e-4
     weight_decay: float = 0.01
     beta1: float = 0.9
     beta2: float = 0.999
     eps: float = 1e-8
-    momentum: float = 0.0
-    lr_scheduler: Literal["cosine", "linear", "constant"] = "cosine"
-    warmup_ratio: float = 0.1
+
+
+@dataclass
+class SGDConfig:
+    """SGD optimizer with momentum."""
+    _type_: Literal["sgd"] = "sgd"
+    lr: float = 0.01
+    weight_decay: float = 5e-4
+    momentum: float = 0.9
 
 
 @dataclass
@@ -168,16 +174,18 @@ class DataConfig:
 class TrainConfig:
     """Top-level training configuration.
 
-    Built-in Hydra config is typed too — just add ``hydra: HydraConfig``::
+    Union routing — optimizer auto-picks the right type::
+
+        {_type_: adam, lr: 0.001, beta1: 0.95}  → AdamConfig
+        {_type_: sgd, lr: 0.05, momentum: 0.99}  → SGDConfig
+
+    Built-in Hydra config is typed too::
 
         cfg.hydra.run.dir          # "outputs/2026-08-05/14-30-00"
-        cfg.hydra.job.name         # "train"
-        cfg.hydra.job.num          # 0 (or sweep index)
-        cfg.hydra.runtime.cwd      # original working directory
         cfg.hydra.overrides.task   # ["model=large", "lr=0.001"]
     """
     model: ModelConfig = field(default_factory=ModelConfig)
-    optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
+    optimizer: AdamConfig | SGDConfig = field(default_factory=AdamConfig)
     data: DataConfig = field(default_factory=DataConfig)
     hydra: HydraConfig = field(default_factory=HydraConfig)  # typed!
     exp_name: str = "default"
@@ -210,8 +218,15 @@ def main(cfg: TrainConfig) -> None:
     for name, head in cfg.model.heads.items():
         print(f"  head[{name}]: dim={head.dim}, ratio={head.ratio}")
 
-    print(f"Optimizer:  {cfg.optimizer.name}, lr={cfg.optimizer.lr}, "
-          f"warmup_ratio={cfg.optimizer.warmup_ratio}")
+    # Union routing: optimizer is AdamConfig | SGDConfig
+    opt = cfg.optimizer
+    opt_type = type(opt).__name__
+    if isinstance(opt, AdamConfig):
+        print(f"Optimizer:  adam, lr={opt.lr}, beta1={opt.beta1}, "
+              f"weight_decay={opt.weight_decay}")
+    else:
+        print(f"Optimizer:  sgd, lr={opt.lr}, momentum={opt.momentum}, "
+              f"weight_decay={opt.weight_decay}")
     print(f"Data:       {cfg.data.path}, batch={cfg.data.batch_size}")
     print(f"Seed:       {cfg.seed}")
 

@@ -4,7 +4,7 @@
 
 defaults:
   - model: base       # loads conf/model/base.yaml → merged under "model"
-  - optimizer: adamw  # loads conf/optimizer/adamw.yaml → merged under "optimizer"
+  - optimizer: adam   # loads conf/optimizer/adam.yaml → merged under "optimizer"
   - data: imagenet    # loads conf/data/imagenet.yaml → merged under "data"
   - _self_            # put this config's own values last (they override groups)
 
