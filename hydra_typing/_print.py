@@ -21,7 +21,7 @@ _CYAN = "\033[36m"
 _RESET = "\033[0m"
 
 
-def print_config(
+def _print_config(
     cfg: Any,
     overrides: Optional[List[str]] = None,
     use_color: bool = True,

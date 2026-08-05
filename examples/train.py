@@ -2,6 +2,13 @@
 """
 train.py — Example CLI using hydra_typing (Hydra + typed dataclass configs).
 
+Two approaches shown — pick one:
+
+1. Transparent patch (preferred): ``hydra_typing.patch()`` then use
+   standard ``@hydra.main`` — your config arrives typed automatically.
+
+2. Explicit decorator: ``@hydra_main`` as drop-in for ``@hydra.main``.
+
 Run with standard Hydra CLI — no argparse, no ``-o`` flags::
 
     python train.py
@@ -28,6 +35,7 @@ from typing import Optional, Literal
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
+import hydra_typing  # noqa: E402
 from hydra_typing import hydra_main, print_config, ConfigError  # noqa: E402
 
 
@@ -102,11 +110,8 @@ class TrainConfig:
 def main(cfg: TrainConfig) -> None:
     """Train a model — cfg is a fully typed TrainConfig instance."""
 
-    # Get the overrides Hydra applied (from the command line)
-    overrides = sys.argv[1:]
-
-    # Color-printed config — highlights what was overridden
-    print_config(cfg, overrides=overrides if overrides else None, use_color=True)
+    # Color-printed config — overrides auto-detected from HydraConfig
+    print_config(cfg)
 
     # --- Your training code goes here ---
     print()
