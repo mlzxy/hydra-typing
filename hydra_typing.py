@@ -324,8 +324,10 @@ def _convert(value: Any, expected_type: Any, path: str) -> Any:
             return value
         if not isinstance(value, dict):
             raise ConfigError(f"{path}: expected mapping for {expected_type.__name__}, got {type(value).__name__}")
-        # Support hydra.utils.instantiate via _target_ key
-        if "_target_" in value:
+        # If the dict has _target_ but the dataclass doesn't have _target_ as
+        # a field, call hydra.utils.instantiate() to create the object.
+        # If the dataclass DOES have _target_, treat it as a normal field.
+        if "_target_" in value and "_target_" not in _field_map(expected_type):
             return hydra.utils.instantiate(value)
         return _instantiate(expected_type, value, path)
 

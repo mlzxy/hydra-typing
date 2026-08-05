@@ -60,13 +60,21 @@ from hydra_typing import HydraConfig, to_omegaconf  # noqa: E402
 
 @dataclass
 class LoRAConfig:
-    """A config class that can be instantiated via _target_ in YAML.
+    """Instantiable config — _target_ is a regular typed field.
 
-    See conf/model/lora.yaml — it uses:
-        _target_: __main__.LoRAConfig
-        rank: 16
-        alpha: 32
+    Standard Hydra pattern: include ``_target_`` in the dataclass, then
+    ``hydra.utils.instantiate(config)`` calls the target class/function.
+
+    Usage::
+
+        # Access _target_ as a typed field
+        print(cfg.model.lora._target_)   # "__main__.LoRAConfig"
+
+        # Deferred instantiate via OmegaConf round-trip
+        oc = to_omegaconf(cfg)
+        lora_module = hydra.utils.instantiate(oc.model.lora)
     """
+    _target_: str = "__main__.LoRAConfig"
     rank: int = 8
     alpha: int = 16
     dropout: float = 0.0
@@ -211,9 +219,10 @@ def main(cfg: TrainConfig) -> None:
     print(f"Hydra job:      {cfg.hydra.job.name} (#{cfg.hydra.job.num})")
     print(f"Overrides:      {cfg.hydra.overrides.get('task', [])}")
 
-    # Instantiate example: LoRAConfig created via _target_ from YAML
+    # _target_ is a regular typed field — accessible like any other
     if cfg.model.lora is not None:
-        print(f"LoRA:           rank={cfg.model.lora.rank}, "
+        print(f"LoRA:           _target_={cfg.model.lora._target_}, "
+              f"rank={cfg.model.lora.rank}, "
               f"alpha={cfg.model.lora.alpha}, "
               f"scaling={cfg.model.lora.scaling:.2f}")
 
