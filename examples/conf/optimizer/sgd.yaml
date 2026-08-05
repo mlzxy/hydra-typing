@@ -5,4 +5,4 @@ weight_decay: 5e-4
 momentum: 0.9
 eps: 1e-8
 lr_scheduler: cosine
-warmup_steps: "${eval:int(${max_steps} * 0.1)}"
+warmup_ratio: 0.1
