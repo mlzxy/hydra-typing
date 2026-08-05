@@ -89,7 +89,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Ty
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 __all__ = [
     "patch",
     "hydra_main",
@@ -412,19 +412,15 @@ def _instantiate(cls: type, data: dict, path: str, strict: bool = False) -> Any:
         raise ConfigError(f"{path}: {cls.__name__} is not a @dataclass")
 
     fields_info = _field_map(cls)
-    unknown = set(data) - set(fields_info)
-    if unknown:
-        if strict:
-            msgs = []
-            for uk in sorted(unknown):
-                matches = difflib.get_close_matches(uk, list(fields_info), n=1, cutoff=0.4)
-                hint = f" (did you mean {matches[0]!r}?)" if matches else ""
-                msgs.append(f"{uk!r}{hint}")
-            raise ConfigError(f"{path}: unknown key(s): {', '.join(msgs)}")
-        # Non-strict: silently drop keys not in the dataclass.
-        # This is the default — during incremental adoption your YAML
-        # likely has more keys than your partial dataclass.
-        data = {k: v for k, v in data.items() if k in fields_info}
+    unknown_keys = set(data) - set(fields_info)
+
+    if unknown_keys and strict:
+        msgs = []
+        for uk in sorted(unknown_keys):
+            matches = difflib.get_close_matches(uk, list(fields_info), n=1, cutoff=0.4)
+            hint = f" (did you mean {matches[0]!r}?)" if matches else ""
+            msgs.append(f"{uk!r}{hint}")
+        raise ConfigError(f"{path}: unknown key(s): {', '.join(msgs)}")
 
     kwargs: Dict[str, Any] = {}
     for name, info in fields_info.items():
@@ -445,7 +441,16 @@ def _instantiate(cls: type, data: dict, path: str, strict: bool = False) -> Any:
             kwargs[name] = info.default_factory()
         else:
             raise ConfigError(f"missing required field {field_path!r} (no default)")
-    return cls(**kwargs)
+
+    instance = cls(**kwargs)
+
+    # Non-strict: attach extra YAML keys as instance attributes
+    # so cfg.extra_field doesn't break during incremental adoption.
+    if unknown_keys and not strict:
+        for key in unknown_keys:
+            object.__setattr__(instance, key, data[key])
+
+    return instance
 
 
 def _dict_to_typed(data: dict, cls: type, strict: bool = False) -> Any:
