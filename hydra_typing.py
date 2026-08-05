@@ -89,7 +89,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Ty
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 __all__ = [
     "patch",
     "hydra_main",
@@ -226,6 +226,10 @@ def _convert(value: Any, expected_type: Any, path: str) -> Any:
     k = _kind(expected_type)
 
     if k == "any":
+        # Keep dicts as DictConfig so cfg.model.hidden_dim attribute
+        # access works during incremental adoption.
+        if isinstance(value, dict):
+            return OmegaConf.create(value)
         return value
 
     if isinstance(expected_type, type) and isinstance(value, expected_type):
