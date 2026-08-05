@@ -1,6 +1,6 @@
 # hydra-typing
 
-**Typed dataclass configs for Hydra — one import, zero boilerplate.**
+**Typed dataclass configs for Hydra — so both you and your AI read the config easier.**
 
 [![PyPI](https://img.shields.io/pypi/v/hydra-typing)](https://pypi.org/project/hydra-typing/)
 
