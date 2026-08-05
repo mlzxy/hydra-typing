@@ -251,6 +251,16 @@ def _convert(value: Any, expected_type: Any, path: str) -> Any:
 
     if k == "union":
         args = typing.get_args(expected_type) or getattr(expected_type, "__args__", ())
+        # If value is a dict and union contains multiple dataclasses,
+        # pick the best-matching one by field name overlap.
+        if isinstance(value, dict):
+            dc_args = [a for a in args if _kind(a) == "dataclass"]
+            if dc_args:
+                def _match_score(dc: type) -> int:
+                    return sum(1 for f in _field_map(dc) if f in value)
+                best = max(dc_args, key=_match_score)
+                return _convert(value, best, path)
+        # Fallback: try each arg in order
         for arg in args:
             try:
                 return _convert(value, arg, path)

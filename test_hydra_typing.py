@@ -191,6 +191,49 @@ class TestTypeConversion:
 
 
 # ---------------------------------------------------------------------------
+# Union routing (auto-detect best-matching dataclass)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AdamCfg:
+    lr: float = 3e-4
+    beta1: float = 0.9
+
+
+@dataclass
+class SgdCfg:
+    lr: float = 0.01
+    momentum: float = 0.9
+
+
+@dataclass
+class UnionCfg:
+    opt: AdamCfg | SgdCfg
+    seed: int = 42
+
+
+class TestUnionRouting:
+    def test_routes_to_adam(self, tmp_path):
+        conf = tmp_path / "conf"
+        conf.mkdir()
+        _write_yaml(str(conf / "config.yaml"), "opt:\n  lr: 0.001\n  beta1: 0.95\n")
+        cfg = load_config(UnionCfg, config_path=str(conf), config_name="config")
+        assert type(cfg.opt).__name__ == "AdamCfg"
+        assert cfg.opt.lr == 0.001
+        assert cfg.opt.beta1 == 0.95
+
+    def test_routes_to_sgd(self, tmp_path):
+        conf = tmp_path / "conf"
+        conf.mkdir()
+        _write_yaml(str(conf / "config.yaml"), "opt:\n  lr: 0.05\n  momentum: 0.99\n")
+        cfg = load_config(UnionCfg, config_path=str(conf), config_name="config")
+        assert type(cfg.opt).__name__ == "SgdCfg"
+        assert cfg.opt.lr == 0.05
+        assert cfg.opt.momentum == 0.99
+
+
+# ---------------------------------------------------------------------------
 # to_plain
 # ---------------------------------------------------------------------------
 
