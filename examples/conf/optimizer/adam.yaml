@@ -1,4 +1,5 @@
-# Adam optimizer — _type_ discriminator routes to AdamConfig
+# Adam optimizer — Method B: Union routing with _type_ discriminator
+# The _type_: adam matches AdamConfig._type_: Literal["adam"]
 _type_: adam
 lr: 1e-3
 weight_decay: 0.0

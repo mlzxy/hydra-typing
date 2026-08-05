@@ -1,0 +1,13 @@
+# Example: using _target_ (Method A) instead of Union routing (Method B).
+# _target_ works with ANY class — even external ones like torch.optim.Adam.
+# Use this when the target class is outside your codebase.
+_target_: __main__.AdamConfig
+lr: 0.001
+beta1: 0.95
+beta2: 0.999
+weight_decay: 0.01
+eps: 1e-8
+
+# Usage:
+#   import hydra.utils
+#   adam = hydra.utils.instantiate(to_omegaconf(cfg.optimizer))

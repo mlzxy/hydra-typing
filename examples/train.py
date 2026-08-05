@@ -34,6 +34,27 @@ work unchanged — YAML composition, ${} interpolation, --multirun, etc.
 ==== Sweeps over nested fields =================================================
 
     python train.py --multirun layers.0.dim=256,512,1024
+
+==== Union routing vs _target_ — two ways to pick a concrete type =============
+
+    Method A: _target_ — explicit, works with any class, needs instantiate():
+        # conf/optimizer/adam.yaml
+        _target_: __main__.AdamConfig
+        lr: 0.001
+
+        lora = hydra.utils.instantiate(to_omegaconf(cfg.model.lora))
+
+    Method B: Union routing — type-safe, auto-resolved during load:
+        optimizer: AdamConfig | SGDConfig  # ← declared in dataclass
+
+        # conf/optimizer/adam.yaml
+        _type_: adam     # discriminator → exact match
+        lr: 0.001
+
+        cfg.optimizer  # already AdamConfig, no instantiate() needed
+
+    Use _target_ when the class is external (torch.optim.Adam).
+    Use Union routing when you own the config types and want IDE support.
 """
 
 from __future__ import annotations

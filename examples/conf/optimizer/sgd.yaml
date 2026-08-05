@@ -1,4 +1,4 @@
-# SGD optimizer — _type_ discriminator routes to SGDConfig
+# SGD optimizer — Method B: Union routing with _type_ discriminator
 _type_: sgd
 lr: 0.01
 weight_decay: 5e-4
