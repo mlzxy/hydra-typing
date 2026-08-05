@@ -221,6 +221,21 @@ def _kind(t: Any) -> str:
     return "other"
 
 
+def _discriminator_matches(dc: type, data: dict) -> bool:
+    """Check if *data* has a discriminator value matching *dc*.
+
+    A discriminator is a field named ``_type_`` or ``name`` whose type
+    is ``Literal[...]``.  If the data contains that field with the
+    declared literal value, it's an exact match.
+    """
+    for name, info in _field_map(dc).items():
+        if name in ("_type_", "name") and _kind(info.type) == "literal":
+            expected = typing.get_args(info.type)
+            if expected and data.get(name) == expected[0]:
+                return True
+    return False
+
+
 def _convert(value: Any, expected_type: Any, path: str) -> Any:
     """Convert *value* to *expected_type*, raising ``ConfigError`` on mismatch."""
     k = _kind(expected_type)
@@ -251,11 +266,18 @@ def _convert(value: Any, expected_type: Any, path: str) -> Any:
 
     if k == "union":
         args = typing.get_args(expected_type) or getattr(expected_type, "__args__", ())
-        # If value is a dict and union contains multiple dataclasses,
-        # pick the best-matching one by field name overlap.
+        # If value is a dict, pick among dataclass options.
         if isinstance(value, dict):
             dc_args = [a for a in args if _kind(a) == "dataclass"]
             if dc_args:
+                # 1) Exact match by discriminator field (_type_ or name).
+                #    If the dict has _type_: sgd and SGDConfig declares
+                #    _type_: Literal["sgd"], route exactly.
+                for dc in dc_args:
+                    if _discriminator_matches(dc, value):
+                        return _convert(value, dc, path)
+                # 2) Fallback: pick the dataclass with the most
+                #    overlapping field names.
                 def _match_score(dc: type) -> int:
                     return sum(1 for f in _field_map(dc) if f in value)
                 best = max(dc_args, key=_match_score)
