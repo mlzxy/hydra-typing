@@ -50,12 +50,29 @@ sys.path.insert(0, str(_REPO_ROOT))
 # One import — transparently makes @hydra.main typed
 import hydra  # noqa: E402
 import hydra_typing; hydra_typing.patch()  # noqa: E402, E702
-from hydra_typing import HydraConfig  # noqa: E402
+from hydra_typing import HydraConfig, to_omegaconf  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Config dataclasses — single source of truth
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class LoRAConfig:
+    """A config class that can be instantiated via _target_ in YAML.
+
+    See conf/model/lora.yaml — it uses:
+        _target_: __main__.LoRAConfig
+        rank: 16
+        alpha: 32
+    """
+    rank: int = 8
+    alpha: int = 16
+    dropout: float = 0.0
+
+    def __post_init__(self) -> None:
+        self.scaling = self.alpha / self.rank
 
 
 @dataclass
@@ -76,22 +93,23 @@ class HeadConfig:
 
 @dataclass
 class ModelConfig:
-    """Model architecture with nested collections.
+    """Model architecture with nested collections + instantiate.
 
-    Demonstrates List[dataclass] and Dict[str, dataclass]:
+    Demonstrates List[dataclass], Dict[str, dataclass], and _target_:
       - ``layers``: ordered list of layer configs
       - ``heads``: named dict of head configs
+      - ``lora``: instantiated via _target_ (see conf/model/lora.yaml)
 
     CLI override examples::
 
         # List elements by index
-        python train.py model.layers.0.dim=1024 model.layers.1.type=mlp
+        python train.py model.layers.0.dim=1024
 
         # Dict elements by key
         python train.py model.heads.attention.dim=512
 
-        # Append to list
-        python train.py +model.layers.2.type=conv +model.layers.2.dim=512
+        # Instantiate via _target_ — add the lora group
+        python train.py +model.lora=model/lora
     """
     hidden_dim: int = 256
     num_layers: int = 6
@@ -108,6 +126,7 @@ class ModelConfig:
         "attention": HeadConfig(dim=128, ratio=4),
         "mlp": HeadConfig(dim=256, ratio=8),
     })
+    lora: Optional[LoRAConfig] = None
 
 
 @dataclass
@@ -191,6 +210,17 @@ def main(cfg: TrainConfig) -> None:
     print(f"\nHydra run dir:  {cfg.hydra.run.dir}")
     print(f"Hydra job:      {cfg.hydra.job.name} (#{cfg.hydra.job.num})")
     print(f"Overrides:      {cfg.hydra.overrides.get('task', [])}")
+
+    # Instantiate example: LoRAConfig created via _target_ from YAML
+    if cfg.model.lora is not None:
+        print(f"LoRA:           rank={cfg.model.lora.rank}, "
+              f"alpha={cfg.model.lora.alpha}, "
+              f"scaling={cfg.model.lora.scaling:.2f}")
+
+    # to_omegaconf — convert back to OmegaConf DictConfig for 100% compat
+    oc = to_omegaconf(cfg)
+    print(f"\nOmegaConf round-trip: type={type(oc).__name__}, "
+          f"optimizer.lr={oc.optimizer.lr}")  # all OmegaConf APIs work
 
     print(f"\nTraining for {cfg.max_steps} steps...")
 

@@ -95,6 +95,7 @@ __all__ = [
     "hydra_main",
     "load_config",
     "to_plain",
+    "to_omegaconf",
     "HydraConfig",
     "RunDir",
     "SweepDir",
@@ -684,6 +685,33 @@ def hydra_main(
         return wrapper
 
     return decorator
+
+
+# ---------------------------------------------------------------------------
+# to_omegaconf — typed dataclass → OmegaConf DictConfig (100% compat fallback)
+# ---------------------------------------------------------------------------
+
+
+def to_omegaconf(cfg: Any) -> Any:
+    """Convert a typed dataclass back to an OmegaConf ``DictConfig``.
+
+    This is the **compatibility safety net**: any Hydra feature or
+    third-party code that expects an OmegaConf ``DictConfig`` can always
+    get one back from your typed config.
+
+    Uses ``to_plain`` → ``OmegaConf.create`` to avoid OmegaConf's
+    limited type vocabulary (``Literal``, ``Union``, etc.).  Full
+    round-trip guarantees — no data is lost.
+
+    Example::
+
+        cfg = load_config(TrainConfig, config_name="base")
+        # ... use typed cfg ...
+        oc = to_omegaconf(cfg)
+        OmegaConf.save(oc, "exported.yaml")        # any OmegaConf API works
+        hydra.utils.instantiate(oc.model.lora)      # nested instantiate, etc.
+    """
+    return OmegaConf.create(to_plain(cfg))
 
 
 # ---------------------------------------------------------------------------

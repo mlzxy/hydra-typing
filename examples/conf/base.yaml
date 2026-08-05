@@ -37,6 +37,13 @@ model:
       dim: 256
       ratio: 8
 
+  # _target_ instantiate — hydra.utils.instantiate() called automatically:
+  lora:
+    _target_: __main__.LoRAConfig
+    rank: 16
+    alpha: 32
+    dropout: 0.1
+
 # WandB (optional)
 wandb_project: null
 wandb_entity: null

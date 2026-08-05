@@ -1,0 +1,6 @@
+# Example: using _target_ for hydra.utils.instantiate
+# This creates a LoRA adapter config via object instantiation
+_target_: __main__.LoRAConfig
+rank: 16
+alpha: 32
+dropout: 0.1
