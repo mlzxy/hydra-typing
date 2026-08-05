@@ -678,8 +678,12 @@ def hydra_main(
     config_name: Optional[str] = None,
     version_base: Optional[str] = None,
     schema: Optional[Type[Any]] = None,
+    strict: bool = False,
 ) -> Callable:
-    """Explicit drop-in for ``@hydra.main`` that delivers typed configs."""
+    """Explicit drop-in for ``@hydra.main`` that delivers typed configs.
+
+    Set *strict=True* to reject YAML keys not in the dataclass.
+    """
     def decorator(fn: Callable[..., T]) -> Callable[..., T]:
         actual_schema = schema or _extract_schema(fn)
         params = [k for k in fn.__code__.co_varnames[:fn.__code__.co_argcount]]
@@ -694,7 +698,7 @@ def hydra_main(
         )
         def wrapper(dict_cfg: DictConfig, *args: Any, **kwargs: Any) -> T:
             plain = OmegaConf.to_container(dict_cfg, resolve=True, enum_to_str=True)
-            kwargs[cfg_param] = _dict_to_typed(plain, actual_schema, strict=False)
+            kwargs[cfg_param] = _dict_to_typed(plain, actual_schema, strict=strict)
             return fn(*args, **kwargs)
 
         return wrapper
