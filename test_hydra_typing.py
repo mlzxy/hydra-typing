@@ -172,13 +172,15 @@ class TestTypeConversion:
         cfg = load_config(ReqCfg, config_path=str(conf), config_name="config")
         assert cfg.name == "provided"
 
-    def test_unknown_key_silent_by_default(self, tmp_path):
-        """Extra YAML keys are silently dropped (incremental adoption)."""
+    def test_extra_keys_survive_as_attributes(self, tmp_path):
+        """Extra YAML keys are attached as instance attributes by default."""
         conf = tmp_path / "conf"
         conf.mkdir()
-        _write_yaml(str(conf / "config.yaml"), "a: 1\nbogus: xxx\n")
+        _write_yaml(str(conf / "config.yaml"), "a: 1\nextra_field: hello\ncount: 42\n")
         cfg = load_config(SimpleCfg, config_path=str(conf), config_name="config")
-        assert cfg.a == 1  # bogus silently dropped
+        assert cfg.a == 1
+        assert cfg.extra_field == "hello"     # survives as attribute
+        assert cfg.count == 42                # survives as attribute
 
     def test_unknown_key_strict(self, tmp_path):
         conf = tmp_path / "conf"

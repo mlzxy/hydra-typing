@@ -90,6 +90,8 @@ class TrainConfig:
 
 `Any` fields keep the original `DictConfig` — so `cfg.model.hidden_dim` works the same before and after typing.
 
+Extra YAML keys not in your dataclass are attached as instance attributes — `cfg.whatever` doesn't break.  Opt into `strict=True` when you're ready to reject unknown keys.
+
 ## Complex nested configs
 
 ```python
