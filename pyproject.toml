@@ -1,6 +1,6 @@
 [project]
 name = "hydra-typing"
-version = "0.2.0"
+version = "0.2.1"
 description = "Typed dataclass configs for Hydra — so both you and your AI read the config easier"
 readme = "README.md"
 requires-python = ">=3.9"
